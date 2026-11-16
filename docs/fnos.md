@@ -73,3 +73,41 @@ bash scripts/build-fpk.sh 1.1.7 x86 build/app-x86.tgz dist
 ```
 
 ARM 设备把 `amd64` 换成 `arm64`、`x86` 换成 `arm` 即可。
+
+## 目录结构与「应用入口」要点
+
+飞牛（fnOS）在安装时**从 app.tgz 载荷内部**读取应用入口配置，而不是从 fpk 根目录的 `ui/`：
+
+```
+app.tgz
+├── bin/music-dl
+├── README.md
+├── LICENSE
+└── ui/                 # 入口必须在这里（安装后为 ${TRIM_APPDEST}/ui）
+    ├── config          # ".url" 入口定义，ID 需以 appname 前缀
+    └── images/
+        ├── icon_64.png
+        └── icon_256.png
+```
+
+- `fnos/ui/config` 中的入口 ID 必须与 `fnos/manifest` 的 `desktop_applaunchname` 一致（本包均为 `go-music-dl.Application`）。
+- 入口图标模板 `images/icon_{0}.png` 会被替换成 64 / 256，因此图标文件名固定为 `icon_64.png`、`icon_256.png`。
+- `scripts/build-app-tgz.sh` 会把 `fnos/ui` 复制进载荷；`scripts/build-fpk.sh` 打包后会重新解出 app.tgz 并校验 `ui/config`、图标与二进制是否存在，缺失直接报错，避免再产出「能装能跑但没有入口」的包。
+
+## 常见问题
+
+**装好后只有「停用」按钮，桌面和应用中心都没有入口？**
+1.1.7-1 之前的包把 `ui/config` 只放在 fpk 根目录，机关没有生效，已修复。请卸载旧版后重新安装 `go-music-dl_1.1.7-1_*.fpk`（或在应用中心直接覆盖安装同架构新包）；若入口仍未出现，重启一次 NAS 让应用中心刷新入口缓存。
+
+**端口冲突**：默认 8090，若被占用请先停用占用该端口的应用；需要换端口可改 `fnos/manifest` 的 `service_port`、`fnos/ui/config` 的 `port` 与 `fnos/GoMusicDL.sc` 后重新打包。
+
+## 打包修订号
+
+同一上游版本需要重新打包（例如修复打包脚本）时，给版本加 `-N` 修订后缀即可：
+
+```
+Actions → fnOS Package → Run workflow → version = 1.1.7-2
+```
+
+上游 tag 会自动取 `-` 之前的部分（`v1.1.7`）下载产物，生成的 release 为 `fnos-v1.1.7-2`，manifest 版本为 `1.1.7-2`。
+

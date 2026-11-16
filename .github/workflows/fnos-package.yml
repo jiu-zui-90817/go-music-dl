@@ -34,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      upstream_version: ${{ steps.version.outputs.upstream_version }}
       skip: ${{ steps.check.outputs.skip }}
     steps:
       - name: Resolve version
@@ -52,8 +53,11 @@ jobs:
             ver="${tag#v}"
           fi
           [ -n "${ver}" ] || { echo "cannot resolve upstream version" >&2; exit 1; }
-          echo "upstream version: ${ver}"
+          # 允许用 1.1.7-2 这样的打包修订号重新打包同一上游版本，上游 tag 取 - 之前的部分
+          base="${ver%%-*}"
+          echo "package version: ${ver} (upstream ${base})"
           echo "version=${ver}" >> "$GITHUB_OUTPUT"
+          echo "upstream_version=${base}" >> "$GITHUB_OUTPUT"
       - name: Skip when the fnOS release already exists
         id: check
         env:
@@ -85,7 +89,7 @@ jobs:
       - name: Download upstream release asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.prepare.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.upstream_version }}
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
@@ -123,11 +127,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          UPSTREAM_VERSION: ${{ needs.prepare.outputs.upstream_version }}
         run: |
           set -euo pipefail
           ls -l dist
           {
-            echo "飞牛（fnOS）安装包，由上游 [go-music-dl](https://github.com/${UPSTREAM_REPO}/releases/tag/v${VERSION}) 的 Linux 构建重新打包。"
+            echo "飞牛（fnOS）安装包，由上游 [go-music-dl](https://github.com/${UPSTREAM_REPO}/releases/tag/v${UPSTREAM_VERSION}) 的 Linux 构建重新打包。"
             echo ""
             echo "- 版本：${VERSION}"
             echo "- 架构：x86 (amd64) / arm (arm64)"

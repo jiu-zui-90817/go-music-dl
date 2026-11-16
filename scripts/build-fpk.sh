@@ -88,4 +88,15 @@ PACKED_CHECKSUM=$(tar -xzOf "${OUT_DIR}/${FPK_NAME}" app.tgz | md5sum | awk '{pr
 [ "${PACKED_CHECKSUM}" = "${CHECKSUM}" ] || die "checksum verification failed for ${FPK_NAME}"
 [ "$(tar -xzOf "${OUT_DIR}/${FPK_NAME}" manifest | grep -E '^checksum' | cut -d '=' -f 2- | tr -d '[:space:]')" = "${CHECKSUM}" ] || die "manifest checksum mismatch in ${FPK_NAME}"
 
+# fnOS reads the desktop/app-center entry from the payload (${TRIM_APPDEST}/ui),
+# so refuse to publish a package whose app.tgz has no ui/config or icons.
+mkdir -p "${WORK_DIR}/check_app"
+tar -xzOf "${OUT_DIR}/${FPK_NAME}" app.tgz > "${WORK_DIR}/check_app.tgz"
+tar -xzf "${WORK_DIR}/check_app.tgz" -C "${WORK_DIR}/check_app"
+[ -f "${WORK_DIR}/check_app/ui/config" ] || die "app.tgz is missing ui/config (fnOS would register no app entry)"
+[ -f "${WORK_DIR}/check_app/bin/music-dl" ] || die "app.tgz is missing bin/music-dl"
+for size in 64 256; do
+    [ -f "${WORK_DIR}/check_app/ui/images/icon_${size}.png" ] || die "app.tgz is missing ui/images/icon_${size}.png"
+done
+
 echo "[build-fpk] wrote ${OUT_DIR}/${FPK_NAME} (${FPK_NAME})"
