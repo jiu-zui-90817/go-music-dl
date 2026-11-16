@@ -1,0 +1,3 @@
+#!/bin/bash
+# go-music-dl ships a self-contained binary: no install/upgrade/config steps needed.
+exit 0

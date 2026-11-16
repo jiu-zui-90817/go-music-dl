@@ -1,0 +1,137 @@
+name: fnOS Package
+
+# 上游 guohuiyuan/go-music-dl 发布新版本后，自动同步并打包飞牛（fnOS）安装包。
+# 触发方式：
+#   - schedule: 每 6 小时检查一次上游最新 release，已有对应 fnOS release 时自动跳过
+#   - workflow_dispatch: 手动指定版本重新打包
+#   - push tag fnos-v*: 手动补发某个版本
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "要打包的上游版本（例如 v1.1.7），留空则使用上游最新 release"
+        required: false
+        default: ""
+  push:
+    tags:
+      - "fnos-v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fnos-package
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: guohuiyuan/go-music-dl
+
+jobs:
+  prepare:
+    name: Resolve upstream version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - name: Resolve version
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            ver="${GITHUB_REF_NAME#fnos-v}"
+          elif [ -n "${{ github.event.inputs.version || '' }}" ]; then
+            ver="${{ github.event.inputs.version }}"
+            ver="${ver#v}"
+          else
+            tag=$(gh api "repos/${UPSTREAM_REPO}/releases/latest" --jq .tag_name)
+            ver="${tag#v}"
+          fi
+          [ -n "${ver}" ] || { echo "cannot resolve upstream version" >&2; exit 1; }
+          echo "upstream version: ${ver}"
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+      - name: Skip when the fnOS release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "fnos-v${{ steps.version.outputs.version }}" -R "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "fnos-v${{ steps.version.outputs.version }} already released - skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  package:
+    name: Package ${{ matrix.platform }}
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x86
+            arch: amd64
+          - platform: arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download upstream release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for attempt in $(seq 1 12); do
+            if gh release download "v${VERSION}" -R "${UPSTREAM_REPO}" -p "go-music-dl_linux_${ARCH}.tar.gz" -D build --clobber; then
+              break
+            fi
+            echo "download attempt ${attempt} failed, retrying in 15s"
+            sleep 15
+          done
+          ls -l build
+      - name: Build app.tgz
+        run: bash scripts/build-app-tgz.sh "build/go-music-dl_linux_${{ matrix.arch }}.tar.gz" "build/app-${{ matrix.platform }}.tgz"
+      - name: Build fpk
+        run: bash scripts/build-fpk.sh "${{ needs.prepare.outputs.version }}" "${{ matrix.platform }}" "build/app-${{ matrix.platform }}.tgz" dist
+      - name: Upload fpk artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fpk-${{ matrix.platform }}
+          path: dist/*.fpk
+          if-no-files-found: error
+
+  release:
+    name: Publish fnOS release
+    needs: [prepare, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          ls -l dist
+          {
+            echo "飞牛（fnOS）安装包，由上游 [go-music-dl](https://github.com/${UPSTREAM_REPO}/releases/tag/v${VERSION}) 的 Linux 构建重新打包。"
+            echo ""
+            echo "- 版本：${VERSION}"
+            echo "- 架构：x86 (amd64) / arm (arm64)"
+            echo "- 安装：fnOS 应用中心 → 设置 → 手动安装应用，选择对应架构的 .fpk"
+            echo "- 访问：http://NAS:8090/music/，首次启动请在 Web 设置页完成初始化"
+            echo "- 日志：应用中心 → Go Music DL → 运行日志"
+          } > notes.md
+          gh release create "fnos-v${VERSION}" dist/*.fpk --repo "${GITHUB_REPOSITORY}" --title "fnOS ${VERSION}" --notes-file notes.md

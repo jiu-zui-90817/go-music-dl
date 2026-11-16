@@ -1,0 +1,114 @@
+#!/bin/bash
+# fnOS lifecycle entry for go-music-dl (native app).
+# start/stop/status are called by the fnOS app center; `log` prints the service log.
+set -u
+
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+APP_NAME="${TRIM_APPNAME:-go-music-dl}"
+APP_DIR="${TRIM_APPDEST:-/var/apps/${APP_NAME}/target}"
+DATA_DIR="${TRIM_PKGVAR:-/var/apps/${APP_NAME}/var}"
+LOG_FILE="${DATA_DIR}/${APP_NAME}.log"
+PID_FILE="${DATA_DIR}/${APP_NAME}.pid"
+BIN="${APP_DIR}/bin/music-dl"
+PORT="${TRIM_SERVICE_PORT:-8090}"
+BASE_PATH="/music"
+
+mkdir -p "${DATA_DIR}" >/dev/null 2>&1 || true
+
+is_running() {
+    local pid
+    pid=$(cat "${PID_FILE}" 2>/dev/null) || return 1
+    [ -n "${pid}" ] || return 1
+    kill -0 "${pid}" 2>/dev/null
+}
+
+port_ready() {
+    (exec 3<>"/dev/tcp/127.0.0.1/${PORT}") >/dev/null 2>&1
+}
+
+fail() {
+    echo "ERROR: $1" >&2
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$1" > "${TRIM_TEMP_LOGFILE}"
+    fi
+    return 1
+}
+
+start_app() {
+    if is_running; then
+        echo "${APP_NAME} is already running" >> "${LOG_FILE}"
+        return 0
+    fi
+    if [ ! -x "${BIN}" ]; then
+        fail "找不到可执行文件: ${BIN}"
+        return 1
+    fi
+    echo "===== $(date '+%Y-%m-%d %H:%M:%S') starting ${APP_NAME} on port ${PORT} =====" >> "${LOG_FILE}"
+    cd "${DATA_DIR}" || { fail "无法进入数据目录: ${DATA_DIR}"; return 1; }
+    nohup "${BIN}" web --port "${PORT}" --no-browser --base-path "${BASE_PATH}" >> "${LOG_FILE}" 2>&1 &
+    local pid=$!
+    disown "${pid}" 2>/dev/null || true
+    echo "${pid}" > "${PID_FILE}"
+    local i
+    for i in $(seq 1 20); do
+        if ! kill -0 "${pid}" 2>/dev/null; then
+            rm -f "${PID_FILE}"
+            fail "${APP_NAME} 启动失败（进程立即退出），请查看日志: ${LOG_FILE}"
+            return 1
+        fi
+        if port_ready; then
+            echo "${APP_NAME} is listening on ${PORT}" >> "${LOG_FILE}"
+            return 0
+        fi
+        sleep 1
+    done
+    echo "WARN: ${APP_NAME} 未在 20 秒内监听 ${PORT}，继续等待其自行就绪" >> "${LOG_FILE}"
+    return 0
+}
+
+stop_app() {
+    local pid i
+    if [ -f "${PID_FILE}" ]; then
+        pid=$(cat "${PID_FILE}" 2>/dev/null)
+        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+            kill -TERM "${pid}" 2>/dev/null
+            for i in $(seq 1 15); do
+                kill -0 "${pid}" 2>/dev/null || break
+                sleep 1
+            done
+            kill -0 "${pid}" 2>/dev/null && kill -KILL "${pid}" 2>/dev/null
+        fi
+        rm -f "${PID_FILE}"
+    fi
+    pkill -f "${APP_DIR}/bin/music-dl" 2>/dev/null || true
+    echo "${APP_NAME} stopped" >> "${LOG_FILE}"
+    return 0
+}
+
+case "$1" in
+    start)
+        start_app
+        exit $?
+        ;;
+    stop)
+        stop_app
+        exit 0
+        ;;
+    status)
+        if is_running; then
+            echo "${APP_NAME} is running"
+            exit 0
+        fi
+        echo "${APP_NAME} is not running"
+        exit 3
+        ;;
+    log)
+        tail -n "${2:-100}" "${LOG_FILE}" 2>/dev/null
+        exit 0
+        ;;
+    *)
+        echo "usage: $0 {start|stop|status|log}"
+        exit 1
+        ;;
+esac

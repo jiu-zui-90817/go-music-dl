@@ -41,6 +41,12 @@ docker compose up -d --pull always --remove-orphans
 
 访问 `http://localhost:8080`。首次启动会自动创建 `./data` 并配置好容器写权限；Compose 不依赖仓库里的 Dockerfile 或其他文件，只需 `docker-compose.yml` 和镜像即可启动。修改源码后可使用 `docker compose -f docker-compose.dev.yml up -d --build` 本地构建。
 
+### fnOS（飞牛）
+
+本仓库会自动跟随上游 release 打包飞牛安装包，产物见 [fnOS Releases](https://github.com/jiu-zui-90817/go-music-dl/releases?q=fnos)：在「应用中心 → 手动安装应用」中选择对应架构的 `.fpk`（x86 = amd64，arm = arm64），安装后访问 `http://NAS:8090/music/`。
+
+打包流程、目录约定与本地构建方法见 [docs/fnos.md](docs/fnos.md)。
+
 ### AI / Agent 调用
 
 Web 服务提供 AI 能力索引和播放器控制接口。搜索、歌单、专辑、排行榜、歌单分类、换源、歌词、下载和本地音乐等能力全部复用现有的 `/music/*` 接口，不再维护第二套 AI 包装路由。

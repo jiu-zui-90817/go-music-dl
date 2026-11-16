@@ -1,0 +1,6 @@
+{
+    "port-config": {
+        "protocol-file": "GoMusicDL.sc"
+    },
+    "systemd-unit": {}
+}

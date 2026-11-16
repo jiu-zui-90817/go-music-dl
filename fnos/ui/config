@@ -1,0 +1,14 @@
+{
+    ".url": {
+        "go-music-dl.Application": {
+            "title": "Go Music DL",
+            "desc": "音乐搜索与下载",
+            "icon": "images/icon-{0}.png",
+            "type": "url",
+            "port": "8090",
+            "protocol": "http",
+            "url": "/music/",
+            "allUsers": true
+        }
+    }
+}

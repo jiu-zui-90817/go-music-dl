@@ -1,0 +1,14 @@
+appname         = go-music-dl
+version         = 1.1.7
+display_name    = Go Music DL
+platform        = x86
+maintainer      = jiu-zui-90817
+maintainer_url  = https://github.com/jiu-zui-90817/go-music-dl
+distributor     = jiu-zui-90817
+distributor_url = https://github.com/jiu-zui-90817/go-music-dl
+desktop_uidir   = ui
+desktop_applaunchname = go-music-dl.Application
+service_port    = 8090
+desc            = 音乐搜索与下载工具：聚合多个音源搜索试听，支持歌单同步、批量下载与 Web 播放界面。
+source          = thirdparty
+checksum        = 
