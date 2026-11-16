@@ -98,6 +98,7 @@ jobs:
             sleep 15
           done
           ls -l build
+          test -f "build/go-music-dl_linux_${ARCH}.tar.gz" || { echo "failed to download upstream asset for ${ARCH}" >&2; exit 1; }
       - name: Build app.tgz
         run: bash scripts/build-app-tgz.sh "build/go-music-dl_linux_${{ matrix.arch }}.tar.gz" "build/app-${{ matrix.platform }}.tgz"
       - name: Build fpk
